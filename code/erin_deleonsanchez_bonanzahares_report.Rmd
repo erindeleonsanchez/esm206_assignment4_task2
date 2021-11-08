@@ -13,7 +13,8 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
 library(tidyverse)
 library(here)
 library(lubridate)
-library()
+library(kableExtra)
+library(effsize)
 ```
 
 # A. Introduction: 
@@ -37,23 +38,29 @@ Count the total number of juvenile hare trappings during each year of the study,
 ```{r}
 # First convert the date to class “Date” so that I can create a new column that only contains the year
 total_trap <- bonanza_hares %>% 
+  mutate(site_full = case_when(
+    grid == "bonbs"  ~ "Bonanza Riparian", 
+    grid == "bonmat" ~ "Bonanza Mature",
+    grid == "bonrip" ~ "Black Spruce")) %>%
+  mutate(sex_full = case_when(
+    sex == "f" ~ "Female",
+    sex == "m" ~ "Male")) %>% 
   mutate(date_new = as_date(date, format="%m/%d/%y")) %>% # First convert the date to class “Date” 
   mutate(year = year(date_new)) %>% # Create a new column for year
   filter(age %in% "j") %>% 
   group_by(year) %>% # Group by year
-  count(year) # Count the total number of trappings for each year
+  summarize(sample_size = n()) # Count the total number of trappings for each year
 ```
 
 ```{r}
 # Data visualization
-ggplot(data = total_trap, aes(x = year, y = n)) +
+ggplot(data = total_trap, aes(x = year, y = sample_size)) +
   geom_col() +
   scale_x_continuous(breaks = 1999:2012) +
+  scale_y_continuous(limits=c(0, 130), breaks = c(0, 25, 50, 75, 100, 125)) +
   theme_light() +
-  labs(x = "Year", y = "Total number of juvenile hare trappings", title = "", caption = "")
+  labs(x = "Year", y = "Total number of juvenile hare trappings", title = "Total number of juvenile hare trappings from 1999 to 2012", caption = "Data from Bonanza Creek Long Term Ecological Research")
 ```
-
-
 Then, in 3 - 4 sentences below your figure, describe major takeaways from your graph about total snowshoe hare trappings at the site. You might consider:
 
 What were the minimum and maximum counts of juvenile hare trappings?
@@ -61,14 +68,48 @@ Mean or median annual number of juvenile hares trapped?
 General/notable trends?
 These are absolute counts, but this count is also impacted by effort (e.g. the number of days and number of traps in the study each year). What would you suggest be done moving forward (you are not expected to actually do this) to standardize the juvenile hare population in future analyses?
 
-Note: For this assignment, you do not need to worry about duplicate hare traps (there are very few), but if you're curious how you can, use `janitor::get_dupes()`
+```{r}
+# Some summary stats 
+summary_hares <- total_trap %>% 
+  summarize(mean_hares = mean(sample_size, na.rm = TRUE), 
+            median_hares = median(sample_size, na.rm = TRUE),
+            sd_hares = sd(sample_size, na.rm = TRUE), 
+            min(sample_size),
+            max(sample_size))
+summary_hares
+```
+
 
 ## ii. Visualize juvenile hare weights
 Create a finalized data visualization (or visualizations) in which you compare **juvenile hare weights by sex and site (grid)** (ignore other variables). You should include groups where these variables are not recorded (`NA`). Include finalized figure captions below your visualization(s).
 ```{r}
-
+# Preparing data for visualization
+weight_sex_grid <- bonanza_hares %>% 
+  mutate(site_full = case_when(
+    grid == "bonbs"  ~ "Bonanza Riparian", 
+    grid == "bonmat" ~ "Bonanza Mature",
+    grid == "bonrip" ~ "Black Spruce")) %>%
+  mutate(Sex = case_when(
+    sex == "f" ~ "Female",
+    sex == "m" ~ "Male")) %>% 
+  mutate(date_new = as_date(date, format="%m/%d/%y")) %>% # First convert the date to class “Date” 
+  mutate(year = year(date_new)) %>% # Create a new column for year
+  filter(age %in% "j") %>% 
+  select(weight, site_full, Sex, age) %>% 
+  filter(age %in% "j") %>% 
+  group_by(site_full)
 ```
 
+```{r}
+# Data as a histogram
+ggplot(data = weight_sex_grid, aes(x = weight, fill = Sex, color = Sex)) +
+  geom_histogram(alpha = 0.5) +
+  facet_wrap(~ site_full) +
+  theme_bw() +
+  labs(x = "Weight (g)", y = "Number of hares", title = "Juvenile hare weights by sex and site", caption = "Data from Bonanza Creek Long Term Ecological Research")
+  
+
+```
 Then, in 2 - 3 sentences below your visualization(s) describe in text the main takeaways that you would want the audience to understand from your figures.
 
 Note: There are multiple ways to visualize these comparisons. We encourage you to think carefully then make decisions about how to visualize these comparisons, including:
@@ -82,11 +123,49 @@ Have I simplified and finalized my data visualization(s) to include components t
 Further compare mean weights for **juvenile male and female snowshoe hares** included in this study. In this section, you should include:
 
 A finalized table containing the mean, standard deviation, and sample size for male and female juvenile snowshoe hares, with a table caption (remember, a table caption should be placed *above* the table in your report)
+```{r, include = TRUE}
+summary_hares <- weight_sex_grid %>% 
+  group_by(Sex) %>% 
+  select(Sex,weight) %>% 
+  summarize(mean_weight = mean(weight, na.rm = TRUE),
+            sd_weight = sd(weight, na.rm = TRUE), 
+            sample_size = n())
+
+kable(summary_hares, col.names = c("Sex", "Mean weight (g)", "Standard Deviation (g)", "Sample size (n)"), digits = 2, caption = "Table 1: Summary statistics for juvenile snowshoe hares") %>% 
+kable_classic()
+```
+
+
 ```{r, include = FALSE}
+# Get the effect size: ask why all N/As
+m_hares <- bonanza_hares %>% 
+  filter(sex == "m", age == "j") %>% 
+  pull(weight)
+
+f_hares <- bonanza_hares %>% 
+  filter(sex == "f", age == "j") %>% 
+  pull(weight)
+
+cohen.d(m_hares, f_hares)
+
+hist(m_hares) 
+qqnorm(m_hares) 
+hist(f_hares) 
+qqnorm(f_hares)
+
+# Run the t-test:
+t.test(m_hares, f_hares)
+
+# Get the means & SDs for each: 
+male_mean <- mean(m_hares)
+female_mean <- mean(f_hares)
+male_sd <- sd(m_hares)
+female_sd <- sd(f_hares)
 
 ```
+
 A 2 - 3 sentence comprehensive statement of the means comparison, including at least:
-The actual difference in means
+The actual difference in means # What does this mean??? Is this the outcome of the t-test???
 Effect size (Cohen's *d*) (see effsize::cohen.d() example in the Lab 5 key)
 Outcome of an unpaired two-sample t-test
 
